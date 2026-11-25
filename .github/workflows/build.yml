@@ -40,8 +40,10 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
 
       # Run the pushed image and prove the CORS behaviour end to end:
-      # preflight from the allowed origin gets 204 + ACAO, a foreign
-      # origin gets no ACAO header, /healthz answers 200.
+      # preflight from the allowed origin gets 204 + ACAO for that origin,
+      # a foreign origin never gets an ACAO matching its own origin
+      # (browsers only honour an ACAO value equal to the requesting
+      # origin), /healthz answers 200.
       - name: Verify CORS proxy in built image
         run: |
           docker run -d --rm --name cors-proxy-test -p 18080:80 \
@@ -50,20 +52,22 @@ jobs:
           sleep 3
           echo "--- healthz (must be 200) ---"
           curl -sf -o /dev/null http://127.0.0.1:18080/healthz && echo "OK: healthz 200"
-          echo "--- preflight, allowed origin (must be 204 + ACAO) ---"
-          curl -s -i -X OPTIONS http://127.0.0.1:18080/v1/models \
+          echo "--- preflight, allowed origin (must be 204 + ACAO for office.zetz.my.id) ---"
+          RESP=$(curl -s -i -X OPTIONS http://127.0.0.1:18080/v1/models \
             -H 'Origin: https://office.zetz.my.id' \
             -H 'Access-Control-Request-Method: GET' \
-            -H 'Access-Control-Request-Headers: authorization,content-type' \
-            | grep -iE 'HTTP/|access-control-allow-origin|access-control-allow-methods|access-control-allow-headers'
-          echo "--- preflight, foreign origin (must NOT get ACAO) ---"
+            -H 'Access-Control-Request-Headers: authorization,content-type')
+          echo "$RESP" | grep -qi 'HTTP/1.1 204' || { echo "FAIL: preflight not 204"; exit 1; }
+          echo "$RESP" | grep -qi 'access-control-allow-origin: https://office.zetz.my.id' || { echo "FAIL: allowed origin missing ACAO"; exit 1; }
+          echo "OK: preflight 204 + ACAO for allowed origin"
+          echo "--- preflight, foreign origin (must NOT get ACAO for its own origin) ---"
           if curl -s -i -X OPTIONS http://127.0.0.1:18080/v1/models \
             -H 'Origin: https://evil.example' \
             -H 'Access-Control-Request-Method: GET' \
-            | grep -qi 'access-control-allow-origin'; then
-            echo "FAIL: foreign origin got ACAO"
+            | grep -qi 'access-control-allow-origin: https://evil.example'; then
+            echo "FAIL: foreign origin got ACAO for its own origin"
             exit 1
           else
-            echo "OK: no ACAO for foreign origin"
+            echo "OK: foreign origin did not get a usable ACAO"
           fi
           docker stop cors-proxy-test
