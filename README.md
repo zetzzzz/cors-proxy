@@ -51,5 +51,7 @@ directly (e.g. provider URL `https://ai-proxy.zetz.my.id/v1`).
 ## Verify
 
 The workflow runs the built image and checks the CORS behaviour:
-preflight from the allowed origin gets 204 + `Access-Control-Allow-Origin`,
-a foreign origin gets no CORS header, and `/healthz` answers 200.
+preflight from the allowed origin gets 204 + `Access-Control-Allow-Origin`
+for that origin, a foreign origin never receives an
+`Access-Control-Allow-Origin` matching its own origin, and `/healthz`
+answers 200.
