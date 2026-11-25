@@ -1,0 +1,47 @@
+# Reverse proxy to Arsant with CORS headers for the ONLYOFFICE AI plugin.
+# The plugin (running at ${ALLOWED_ORIGIN}) fetches <proxy>/v1/models and
+# <proxy>/v1/chat/completions straight from the browser, so the proxy
+# must answer the CORS preflight itself and add ACAO to real responses.
+# Target is fixed to Arsant only; this is NOT an open proxy.
+server {
+    listen       80;
+    server_name  _;
+
+    client_max_body_size 50m;
+
+    # Local liveness probe (used by the Docker HEALTHCHECK and by Pangolin).
+    location = /healthz {
+        access_log off;
+        return 200 'ok';
+    }
+
+    location / {
+        # CORS preflight: answer locally, never forward to Arsant.
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' '${ALLOWED_ORIGIN}' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            add_header 'Access-Control-Max-Age' '86400' always;
+            add_header 'Content-Type' 'text/plain; charset=UTF-8' always;
+            add_header 'Content-Length' 0 always;
+            return 204;
+        }
+
+        add_header 'Access-Control-Allow-Origin' '${ALLOWED_ORIGIN}' always;
+        add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+        add_header 'Access-Control-Expose-Headers' 'Content-Length, Content-Type' always;
+
+        proxy_pass https://arsant.my.id;
+        proxy_http_version 1.1;
+        proxy_set_header Host arsant.my.id;
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header Content-Type $http_content_type;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_ssl_server_name on;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+}
