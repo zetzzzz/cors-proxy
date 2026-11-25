@@ -1,0 +1,69 @@
+name: Build and publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - default.conf.template
+      - .github/workflows/build.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  VERSION: 1.0.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ env.VERSION }}
+            ghcr.io/${{ github.repository }}:latest
+
+      # Run the pushed image and prove the CORS behaviour end to end:
+      # preflight from the allowed origin gets 204 + ACAO, a foreign
+      # origin gets no ACAO header, /healthz answers 200.
+      - name: Verify CORS proxy in built image
+        run: |
+          docker run -d --rm --name cors-proxy-test -p 18080:80 \
+            -e ALLOWED_ORIGIN=https://office.zetz.my.id \
+            "ghcr.io/${{ github.repository }}:${{ env.VERSION }}"
+          sleep 3
+          echo "--- healthz (must be 200) ---"
+          curl -sf -o /dev/null http://127.0.0.1:18080/healthz && echo "OK: healthz 200"
+          echo "--- preflight, allowed origin (must be 204 + ACAO) ---"
+          curl -s -i -X OPTIONS http://127.0.0.1:18080/v1/models \
+            -H 'Origin: https://office.zetz.my.id' \
+            -H 'Access-Control-Request-Method: GET' \
+            -H 'Access-Control-Request-Headers: authorization,content-type' \
+            | grep -iE 'HTTP/|access-control-allow-origin|access-control-allow-methods|access-control-allow-headers'
+          echo "--- preflight, foreign origin (must NOT get ACAO) ---"
+          if curl -s -i -X OPTIONS http://127.0.0.1:18080/v1/models \
+            -H 'Origin: https://evil.example' \
+            -H 'Access-Control-Request-Method: GET' \
+            | grep -qi 'access-control-allow-origin'; then
+            echo "FAIL: foreign origin got ACAO"
+            exit 1
+          else
+            echo "OK: no ACAO for foreign origin"
+          fi
+          docker stop cors-proxy-test
