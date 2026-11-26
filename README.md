@@ -19,8 +19,8 @@ adding the CORS headers the browser needs.
 
 ## Image
 
-- `ghcr.io/zetzzzz/cors-proxy:1.0.0`
-- `ghcr.io/zetzzzz/cors-proxy:latest` (currently 1.0.0)
+- `ghcr.io/zetzzzz/cors-proxy:1.0.1`
+- `ghcr.io/zetzzzz/cors-proxy:latest` (currently 1.0.1)
 
 Built automatically by GitHub Actions on every push to `main`.
 
@@ -29,7 +29,7 @@ Built automatically by GitHub Actions on every push to `main`.
 ```yaml
 services:
   ai-proxy:
-    image: ghcr.io/zetzzzz/cors-proxy:1.0.0
+    image: ghcr.io/zetzzzz/cors-proxy:1.0.1
     container_name: ai-proxy
     restart: unless-stopped
     ports:
